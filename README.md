@@ -3,10 +3,11 @@
 Two small C++17 programs that measure two of the memory-subsystem effects from
 the "memory layout and cache behavior" topic:
 
-| program      | what it isolates                                              |
-|--------------|--------------------------------------------------------------|
-| `tlb_bench`  | cost of a DTLB miss / hardware page-table walk, and how huge pages and access-pattern predictability change it |
-| `numa_bench` | local vs. remote DRAM latency and bandwidth, first-touch placement, page residency |
+| program       | what it isolates                                              |
+|---------------|--------------------------------------------------------------|
+| `tlb_bench`   | cost of a DTLB miss / hardware page-table walk, and how huge pages and access-pattern predictability change it |
+| `tlb_latency` | compact version of the same idea: a fixed 4-point page-count sweep, random pointer chase, ns/access only |
+| `numa_bench`  | local vs. remote DRAM latency and bandwidth, first-touch placement, page residency |
 
 No third-party libraries. `numa_bench` talks to the kernel directly via the
 `mbind(2)` and `move_pages(2)` syscalls, so there is **no `libnuma` /
@@ -17,6 +18,7 @@ No third-party libraries. `numa_bench` talks to the kernel directly via the
 ```sh
 make
 ./tlb_bench            # ~20 s
+./tlb_latency          # ~10 s, no flags
 ./numa_bench           # ~5 s single-node, longer on a real multi-node box
 ./numa_bench --threads 8
 ```
@@ -98,6 +100,27 @@ evicted to DRAM, the same walk can cost 100 ns+.
 If the `THP %span` column shows less than 100 %, transparent huge pages didn't
 fully back the region (`cat /sys/kernel/mm/transparent_hugepage/enabled`; needs
 `always` or `madvise`) and the `2M random` column is not meaningful.
+
+---
+
+## tlb_latency
+
+A minimal companion to `tlb_bench`: same core experiment (one `Node` per 4 KiB
+page, random circular pointer chain, dependent-load chase), but no CPU pinning,
+no TSC calibration, and no `4K seq` / `2M huge` comparison columns. It just runs
+four hard-coded page counts and prints ns per access.
+
+```
+32 pages    (0.125 MB)   working set fits the L1 DTLB
+256 pages   (1 MB)       spilled to the L2 STLB
+2048 pages  (8 MB)       past STLB reach -> page-table walks
+16384 pages (64 MB)      severe TLB thrashing (and data now past L2)
+```
+
+Because the touched footprint here is `pages x 4 KiB` (a full page each, not one
+line per page), the largest sweep also pushes the data itself out of cache, so
+its ns/access folds in cache-miss cost on top of the page walk — `tlb_bench` is
+the one to use when you need the TLB cost in isolation. No flags.
 
 ---
 

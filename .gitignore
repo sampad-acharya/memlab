@@ -1,3 +1,4 @@
 tlb_bench
+tlb_latency
 numa_bench
 *.o
